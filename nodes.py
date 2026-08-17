@@ -118,6 +118,40 @@ def _resolve_dtype(dtype: str, device: torch.device) -> torch.dtype:
     return torch.float32
 
 
+def _flash_attention_status() -> tuple[bool, str]:
+    """Return whether a usable FlashAttention Python extension is importable."""
+    try:
+        import flash_attn
+
+        return True, str(getattr(flash_attn, "__version__", "installed"))
+    except Exception as exc:
+        # An ABI mismatch can raise OSError rather than ImportError; treating it as
+        # unavailable lets auto mode choose SDPA and gives explicit-la-flash users a
+        # useful error instead of a deep import traceback.
+        return False, f"{type(exc).__name__}: {exc}"
+
+
+def _resolve_batch_attention(attn: str, vision_attn: str) -> tuple[str, str, str]:
+    """Select official batch-runtime backends and validate FlashAttention requests."""
+    flash_available, flash_detail = _flash_attention_status()
+    if attn == "auto":
+        attn = "la_flash" if flash_available else "sdpa"
+    if vision_attn == "auto":
+        vision_attn = "flash_attention_2" if flash_available else "sdpa"
+
+    wants_flash = attn == "la_flash" or vision_attn == "flash_attention_2"
+    if wants_flash and not flash_available:
+        raise ImportError(
+            "FlashAttention is required for the selected LocateAnything batch backend "
+            f"(flash_attn import failed: {flash_detail}). Install a Windows flash_attn wheel "
+            "that exactly matches this ComfyUI Python, PyTorch, CUDA, and CXX11 ABI; or set "
+            "runtime_attention=sdpa and vision_attention=sdpa."
+        )
+
+    detail = f"flash_attn={flash_detail}" if flash_available else "FlashAttention unavailable; SDPA selected"
+    return attn, vision_attn, detail
+
+
 def _load_batch_runtime(
     model_path: str,
     attn: str,
@@ -126,6 +160,11 @@ def _load_batch_runtime(
     group_size: int,
     strict_attn: bool,
 ):
+    attn, vision_attn, backend_detail = _resolve_batch_attention(attn, vision_attn)
+    print(
+        f"[LocateAnything] Batch runtime: attention={attn}, vision_attention={vision_attn} "
+        f"({backend_detail})"
+    )
     os.environ["LA_FLASH_MODEL"] = model_path
     os.environ["LA_FLASH_ATTN"] = attn
     os.environ["LA_FLASH_VISION_ATTN"] = vision_attn
@@ -664,15 +703,17 @@ class LocateAnythingModelLoader:
                 "runtime_attention": (
                     ["la_flash", "sdpa", "eager", "auto"],
                     {
-                        "default": "la_flash",
-                        "tooltip": "Attention backend for the optional official batch runtime.",
+                        "default": "auto",
+                        "tooltip": "Official batch-runtime backend. auto chooses la_flash when "
+                                   "a compatible flash_attn installation is found, otherwise SDPA.",
                     },
                 ),
                 "vision_attention": (
                     ["auto", "sdpa", "eager", "flash_attention_2"],
                     {
                         "default": "auto",
-                        "tooltip": "Vision attention backend for the optional official batch runtime.",
+                        "tooltip": "Vision backend for the official batch runtime. auto selects "
+                                   "FlashAttention2 when a compatible flash_attn installation is found.",
                     },
                 ),
                 "scheduler": (

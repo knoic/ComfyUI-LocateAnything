@@ -32,8 +32,8 @@ Inputs:
 | `dtype` | `auto`, `bfloat16`, `float16`, or `float32`. `auto` selects an appropriate dtype for the device. |
 | `attention` | `sdpa`, `auto`, or `eager`. Standalone inference uses **SDPA**: LocateAnything's released block-mask model code does not implement the eager or FlashAttention2 forward path. |
 | `use_batch_runtime` | Uses the official hybrid batch runtime from the model snapshot when available. Best for multi-frame batches on supported NVIDIA GPUs. |
-| `runtime_attention` | Attention backend for the optional official batch runtime. `la_flash` is the upstream fast path. |
-| `vision_attention` | Vision attention backend for the optional official batch runtime. |
+| `runtime_attention` | Attention backend for the optional official batch runtime. `auto` selects official `la_flash` when `flash_attn` is available, else SDPA. |
+| `vision_attention` | Vision attention backend for the optional official batch runtime. `auto` selects `flash_attention_2` when `flash_attn` is available, else SDPA. |
 | `scheduler` | Hybrid scheduler used by the official batch runtime. |
 | `group_size` | Optional hybrid group size for the upstream batch runtime. |
 | `strict_attn` | If enabled, the batch runtime refuses backend fallback and requires the configured attention mode. |
@@ -129,6 +129,18 @@ Restart ComfyUI after installation.
 
 If this package was installed before `lmdb` was added to the requirements, run
 `pip install lmdb>=1.7.5` in the same Python environment as ComfyUI.
+
+### Optional: Flash Attention batch runtime
+
+For high-throughput video batches, install a `flash_attn` Windows wheel matching **all four** of
+your ComfyUI environment's Python version, PyTorch version, CUDA version, and CXX11 ABI. Then set
+the model loader to `use_batch_runtime=true`, `runtime_attention=auto`, and
+`vision_attention=auto`. The node selects LocateAnything's official `la_flash` sparse-range path
+and prints the chosen backends at load time. If no compatible wheel is installed, `auto` safely
+uses SDPA; selecting `la_flash` or `flash_attention_2` explicitly produces an actionable error.
+
+Use the [Windows AI Wheels Flash Attention table](https://github.com/wildminder/AI-windows-whl#flash-attention)
+to find a matching wheel. Do not install a wheel built for a different PyTorch/CUDA/Python ABI.
 
 ## Basic Workflow
 
