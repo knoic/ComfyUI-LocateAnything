@@ -30,7 +30,7 @@ Inputs:
 | `download_model` | Downloads missing model files automatically when enabled. |
 | `device` | `auto`, `cuda`, `cpu`, or `mps`. NVIDIA CUDA is the recommended path. |
 | `dtype` | `auto`, `bfloat16`, `float16`, or `float32`. `auto` selects an appropriate dtype for the device. |
-| `attention` | `sdpa`, `auto`, or `eager`. SDPA is the broadly compatible default. |
+| `attention` | `sdpa`, `auto`, or `eager`. Standalone inference uses **SDPA**: LocateAnything's released block-mask model code does not implement the eager or FlashAttention2 forward path. |
 | `use_batch_runtime` | Uses the official hybrid batch runtime from the model snapshot when available. Best for multi-frame batches on supported NVIDIA GPUs. |
 | `runtime_attention` | Attention backend for the optional official batch runtime. `la_flash` is the upstream fast path. |
 | `vision_attention` | Vision attention backend for the optional official batch runtime. |
@@ -126,6 +126,9 @@ pip install -r requirements.txt
 ```
 
 Restart ComfyUI after installation.
+
+If this package was installed before `lmdb` was added to the requirements, run
+`pip install lmdb>=1.7.5` in the same Python environment as ComfyUI.
 
 ## Basic Workflow
 

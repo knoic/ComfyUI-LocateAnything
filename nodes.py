@@ -201,6 +201,10 @@ def _apply_model_compat_patches(model_path: str) -> None:
                 """        if 'Qwen3' in arch:\n            self._no_split_modules = ["Qwen3DecoderLayer"]\n        else:\n            self._no_split_modules = ["Qwen2DecoderLayer"]\n\n        \n""",
                 """        if 'Qwen3' in arch:\n            self._no_split_modules = ["Qwen3DecoderLayer"]\n        else:\n            self._no_split_modules = ["Qwen2DecoderLayer"]\n\n        self.post_init()\n\n""",
             ),
+            (
+                """        text_attn_impl = (\n            getattr(config.text_config, '_attn_implementation', None)\n            or getattr(config, '_attn_implementation', None)\n            or 'magi'\n        )\n        config.text_config._attn_implementation = text_attn_impl\n""",
+                """        # The released Qwen block-mask forward only implements magi and\n        # SDPA.  New Transformers versions otherwise initialise the nested text\n        # config as flash_attention_2, which later raises NotImplementedError.\n        # Keep the standalone ComfyUI path on its portable implementation.\n        text_attn_impl = \"sdpa\"\n        config.text_config._attn_implementation = text_attn_impl\n""",
+            ),
         ],
     }
 
@@ -635,8 +639,9 @@ class LocateAnythingModelLoader:
                 "attention": (
                     ["eager", "sdpa", "auto"],
                     {
-                        "default": "eager",
-                        "tooltip": "Eager is the conservative compatibility path. SDPA can be faster but may be less stable on some setups.",
+                        "default": "sdpa",
+                        "tooltip": "Standalone LocateAnything uses SDPA. The released model's "
+                                   "block-mask forward does not implement eager or FlashAttention2.",
                     },
                 ),
                 "use_batch_runtime": (
@@ -712,6 +717,12 @@ class LocateAnythingModelLoader:
         model_path = _resolve_model_source(model_source, download_model)
         torch_device = _resolve_device(device)
         torch_dtype = _resolve_dtype(dtype, torch_device)
+        if not use_batch_runtime and attention != "sdpa":
+            print(
+                f"[LocateAnything] attention={attention} is unsupported by the standalone "
+                "block-mask implementation; using sdpa"
+            )
+            attention = "sdpa"
         kwargs = {
             "trust_remote_code": True,
             "torch_dtype": torch_dtype,
